@@ -180,21 +180,18 @@ Expect<void> Validator::validate(const AST::GlobalSegment &GlobSeg) {
 
 /// Validate Element segment. See "include/validator/validator.h".
 Expect<void> Validator::validate(const AST::ElementSegment &ElemSeg) {
-  /// Check table index and reference type in context.
-  const auto &TableVec = Checker.getTables();
-  const auto &FuncVec = Checker.getFunctions();
-  if (ElemSeg.getIdx() >= TableVec.size()) {
-    LOG(ERROR) << ErrCode::InvalidTableIdx;
-    LOG(ERROR) << ErrInfo::InfoForbidIndex(ErrInfo::IndexCategory::Table,
-                                           ElemSeg.getIdx(), TableVec.size());
-    return Unexpect(ErrCode::InvalidTableIdx);
+  /// Check initialization expressions are const expressions.
+  for (auto &Expr : ElemSeg.getInitExprs()) {
+    if (auto Res = validateConstExpr(Expr->getInstrs()); !Res) {
+      LOG(ERROR) << ErrInfo::InfoAST(ASTNodeAttr::Expression);
+      return Unexpect(Res);
+    }
   }
-  if (TableVec[ElemSeg.getIdx()] != RefType::FuncRef) {
-    LOG(ERROR) << ErrCode::InvalidTableIdx;
-    return Unexpect(ErrCode::InvalidTableIdx);
-  }
+
   /// Check function indices exist in context.
+  /// TODO: Deprecate this after applying new element segment instantiation.
   for (auto &Idx : ElemSeg.getFuncIdxes()) {
+    const auto &FuncVec = Checker.getFunctions();
     if (Idx >= FuncVec.size()) {
       LOG(ERROR) << ErrCode::InvalidFuncIdx;
       LOG(ERROR) << ErrInfo::InfoForbidIndex(ErrInfo::IndexCategory::Function,
@@ -202,13 +199,30 @@ Expect<void> Validator::validate(const AST::ElementSegment &ElemSeg) {
       return Unexpect(ErrCode::InvalidFuncIdx);
     }
   }
-  /// Check table initialization is const expression.
-  if (auto Res =
-          validateConstExpr(ElemSeg.getInstrs(), std::array{ValType::I32});
-      !Res) {
-    LOG(ERROR) << ErrInfo::InfoAST(ASTNodeAttr::Expression);
-    return Unexpect(Res);
+
+  if (ElemSeg.getMode() == AST::ElementSegment::ElemMode::Active) {
+    /// Check table index and reference type in context.
+    const auto &TableVec = Checker.getTables();
+    if (ElemSeg.getIdx() >= TableVec.size()) {
+      LOG(ERROR) << ErrCode::InvalidTableIdx;
+      LOG(ERROR) << ErrInfo::InfoForbidIndex(ErrInfo::IndexCategory::Table,
+                                             ElemSeg.getIdx(), TableVec.size());
+      return Unexpect(ErrCode::InvalidTableIdx);
+    }
+    if (TableVec[ElemSeg.getIdx()] != ElemSeg.getRefType()) {
+      /// Reference type not matched. TODO: New error code according to spec
+      LOG(ERROR) << ErrCode::InvalidTableIdx;
+      return Unexpect(ErrCode::InvalidTableIdx);
+    }
+    /// Check table initialization is a const expression.
+    if (auto Res =
+            validateConstExpr(ElemSeg.getInstrs(), std::array{ValType::I32});
+        !Res) {
+      LOG(ERROR) << ErrInfo::InfoAST(ASTNodeAttr::Expression);
+      return Unexpect(Res);
+    }
   }
+  /// Passive and declarative cases are always valid.
   return {};
 }
 
@@ -239,21 +253,24 @@ Expect<void> Validator::validate(const AST::CodeSegment &CodeSeg,
 
 /// Validate Data segment. See "include/validator/validator.h".
 Expect<void> Validator::validate(const AST::DataSegment &DataSeg) {
-  /// Check memory index in context.
-  const auto &MemVec = Checker.getMemories();
-  if (DataSeg.getIdx() >= MemVec.size()) {
-    LOG(ERROR) << ErrCode::InvalidMemoryIdx;
-    LOG(ERROR) << ErrInfo::InfoForbidIndex(ErrInfo::IndexCategory::Memory,
-                                           DataSeg.getIdx(), MemVec.size());
-    return Unexpect(ErrCode::InvalidMemoryIdx);
+  if (DataSeg.getMode() == AST::DataSegment::DataMode::Active) {
+    /// Check memory index in context.
+    const auto &MemVec = Checker.getMemories();
+    if (DataSeg.getIdx() >= MemVec.size()) {
+      LOG(ERROR) << ErrCode::InvalidMemoryIdx;
+      LOG(ERROR) << ErrInfo::InfoForbidIndex(ErrInfo::IndexCategory::Memory,
+                                             DataSeg.getIdx(), MemVec.size());
+      return Unexpect(ErrCode::InvalidMemoryIdx);
+    }
+    /// Check memory initialization is a const expression.
+    if (auto Res =
+            validateConstExpr(DataSeg.getInstrs(), std::array{ValType::I32});
+        !Res) {
+      LOG(ERROR) << ErrInfo::InfoAST(ASTNodeAttr::Expression);
+      return Unexpect(Res);
+    }
   }
-  /// Check memory initialization is a const expression.
-  if (auto Res =
-          validateConstExpr(DataSeg.getInstrs(), std::array{ValType::I32});
-      !Res) {
-    LOG(ERROR) << ErrInfo::InfoAST(ASTNodeAttr::Expression);
-    return Unexpect(Res);
-  }
+  /// Passive case is always valid.
   return {};
 }
 
@@ -270,6 +287,7 @@ Expect<void> Validator::validate(const AST::ImportDesc &ImpDesc) {
             Checker.getTypes().size());
         return Unexpect(ErrCode::InvalidFuncTypeIdx);
       }
+      Checker.addRef(Checker.getFunctions().size());
       Checker.addFunc(*(*TId), true);
     } else {
       LOG(ERROR) << ErrCode::InvalidFuncIdx;
@@ -385,6 +403,7 @@ Expect<void> Validator::validate(const AST::FunctionSection &FuncSec) {
           ErrInfo::IndexCategory::FunctionType, TId, TypeVec.size());
       return Unexpect(ErrCode::InvalidFuncTypeIdx);
     }
+    Checker.addRef(Checker.getFunctions().size());
     Checker.addFunc(TId);
   }
   return {};
@@ -392,11 +411,11 @@ Expect<void> Validator::validate(const AST::FunctionSection &FuncSec) {
 
 /// Validate Table section. See "include/validator/validator.h".
 Expect<void> Validator::validate(const AST::TableSection &TabSec) {
-  for (auto &TabSeg : TabSec.getContent()) {
-    if (auto Res = validate(*TabSeg.get())) {
-      Checker.addTable(*TabSeg.get());
+  for (auto &Tab : TabSec.getContent()) {
+    if (auto Res = validate(*Tab.get())) {
+      Checker.addTable(*Tab.get());
     } else {
-      LOG(ERROR) << ErrInfo::InfoAST(TabSeg->NodeAttr);
+      LOG(ERROR) << ErrInfo::InfoAST(Tab->NodeAttr);
       return Unexpect(Res);
     }
   }
@@ -405,11 +424,11 @@ Expect<void> Validator::validate(const AST::TableSection &TabSec) {
 
 /// Validate Memory section. See "include/validator/validator.h".
 Expect<void> Validator::validate(const AST::MemorySection &MemSec) {
-  for (auto &MemSeg : MemSec.getContent()) {
-    if (auto Res = validate(*MemSeg.get())) {
-      Checker.addMemory(*MemSeg.get());
+  for (auto &Mem : MemSec.getContent()) {
+    if (auto Res = validate(*Mem.get())) {
+      Checker.addMemory(*Mem.get());
     } else {
-      LOG(ERROR) << ErrInfo::InfoAST(MemSeg->NodeAttr);
+      LOG(ERROR) << ErrInfo::InfoAST(Mem->NodeAttr);
       return Unexpect(Res);
     }
   }
@@ -432,7 +451,9 @@ Expect<void> Validator::validate(const AST::GlobalSection &GlobSec) {
 /// Validate Element section. See "include/validator/validator.h".
 Expect<void> Validator::validate(const AST::ElementSection &ElemSec) {
   for (auto &ElemSeg : ElemSec.getContent()) {
-    if (auto Res = validate(*ElemSeg.get()); !Res) {
+    if (auto Res = validate(*ElemSeg.get())) {
+      Checker.addElem(*ElemSeg.get());
+    } else {
       LOG(ERROR) << ErrInfo::InfoAST(ElemSeg->NodeAttr);
       return Unexpect(Res);
     }
@@ -465,9 +486,11 @@ Expect<void> Validator::validate(const AST::CodeSection &CodeSec) {
 
 /// Validate Data section. See "include/validator/validator.h".
 Expect<void> Validator::validate(const AST::DataSection &DataSec) {
-  for (auto &Data : DataSec.getContent()) {
-    if (auto Res = validate(*Data.get()); !Res) {
-      LOG(ERROR) << ErrInfo::InfoAST(Data->NodeAttr);
+  for (auto &DataSeg : DataSec.getContent()) {
+    if (auto Res = validate(*DataSeg.get())) {
+      Checker.addData(*DataSeg.get());
+    } else {
+      LOG(ERROR) << ErrInfo::InfoAST(DataSeg->NodeAttr);
       return Unexpect(Res);
     }
   }
@@ -521,8 +544,9 @@ Expect<void> Validator::validate(const AST::ExportSection &ExportSec) {
 }
 
 /// Validate constant expression. See "include/validator/validator.h".
-Expect<void> Validator::validateConstExpr(const AST::InstrVec &Instrs,
-                                          Span<const ValType> Returns) {
+Expect<void>
+Validator::validateConstExpr(const AST::InstrVec &Instrs,
+                             std::optional<Span<const ValType>> Returns) {
   for (auto &Instr : Instrs) {
     /// Only these 5 instructions are constant.
     switch (Instr->getOpCode()) {
@@ -551,6 +575,8 @@ Expect<void> Validator::validateConstExpr(const AST::InstrVec &Instrs,
     case OpCode::I64__const:
     case OpCode::F32__const:
     case OpCode::F64__const:
+    case OpCode::Ref__null:
+    case OpCode::Ref__func:
       break;
     default:
       LOG(ERROR) << ErrCode::ConstExprRequired;
