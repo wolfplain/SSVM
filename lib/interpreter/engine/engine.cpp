@@ -258,17 +258,29 @@ Expect<void> Interpreter::execute(Runtime::StoreManager &StoreMgr,
                                   const AST::ReferenceInstruction &Instr) {
   switch (Instr.getOpCode()) {
   case OpCode::Ref__null:
-  case OpCode::Ref__is_null:
-  case OpCode::Ref__func:
-    /// TODO: Implement this.
-    return Unexpect(ErrCode::InstrTypeMismatch);
+    StackMgr.push(genRefType(Instr.getReferenceType()));
+    return {};
+  case OpCode::Ref__is_null: {
+    ValVariant &Val = StackMgr.getTop();
+    if (isNullRef(Val)) {
+      retrieveValue<uint32_t>(Val) = 1;
+    } else {
+      retrieveValue<uint32_t>(Val) = 0;
+    }
+    return {};
+  }
+  case OpCode::Ref__func: {
+    const auto *ModInst = *StoreMgr.getModule(StackMgr.getModuleAddr());
+    const uint32_t FuncAddr = *ModInst->getFuncAddr(Instr.getTargetIndex());
+    StackMgr.getTop() = genRefType(RefType::FuncRef, FuncAddr);
+    return {};
+  }
   default:
     LOG(ERROR) << ErrCode::InstrTypeMismatch;
     LOG(ERROR) << ErrInfo::InfoInstruction(Instr.getOpCode(),
                                            Instr.getOffset());
     return Unexpect(ErrCode::InstrTypeMismatch);
   }
-  return {};
 }
 
 Expect<void> Interpreter::execute(Runtime::StoreManager &StoreMgr,
