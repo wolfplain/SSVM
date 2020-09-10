@@ -122,6 +122,11 @@ public:
   /// Getter of locals vector.
   Span<const std::pair<uint32_t, ValType>> getLocals() const { return Locals; }
 
+  /// Getter of compiled symbol.
+  void *getSymbol() const { return Symbol; }
+  /// Setter of compiled symbol.
+  void setSymbol(void *S) { Symbol = S; }
+
   /// The node type should be ASTNodeAttr::Seg_Code.
   const ASTNodeAttr NodeAttr = ASTNodeAttr::Seg_Code;
 
@@ -131,6 +136,8 @@ private:
   uint32_t SegSize = 0;
   std::vector<std::pair<uint32_t, ValType>> Locals;
   /// @}
+
+  void *Symbol = nullptr;
 };
 
 /// AST DataSegment node.

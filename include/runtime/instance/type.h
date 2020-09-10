@@ -12,6 +12,7 @@
 #pragma once
 
 #include "common/types.h"
+#include "common/value.h"
 #include "support/span.h"
 
 #include <vector>
@@ -22,11 +23,22 @@ namespace Instance {
 
 /// Function type definition in this module.
 struct FType {
+  using Wrapper = void (*)(void *Function, const ValVariant *Args,
+                           ValVariant *Rets);
+
   FType() = default;
-  FType(Span<const ValType> P, Span<const ValType> R)
-      : Params(P.begin(), P.end()), Returns(R.begin(), R.end()) {}
+  FType(Span<const ValType> P, Span<const ValType> R, void *S)
+      : Params(P.begin(), P.end()), Returns(R.begin(), R.end()),
+        Symbol(reinterpret_cast<Wrapper>(S)) {}
   std::vector<ValType> Params;
   std::vector<ValType> Returns;
+
+  /// Getter of symbol
+  Wrapper getSymbol() const { return Symbol; }
+  /// Setter of symbol
+  void setSymbol(void *S) { Symbol = reinterpret_cast<Wrapper>(S); }
+
+  Wrapper Symbol = nullptr;
 };
 
 } // namespace Instance

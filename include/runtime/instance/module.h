@@ -33,8 +33,9 @@ public:
   std::string_view getModuleName() const { return ModName; }
 
   /// Copy the function types in type section to module instance.
-  void addFuncType(Span<const ValType> Params, Span<const ValType> Returns) {
-    FuncTypes.emplace_back(Params, Returns);
+  void addFuncType(Span<const ValType> Params, Span<const ValType> Returns,
+                   void *Symbol) {
+    FuncTypes.emplace_back(Params, Returns, Symbol);
   }
 
   /// Map the external instences between Module and Store.

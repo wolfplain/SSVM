@@ -205,6 +205,22 @@ Expect<void> Module::loadCompiled(LDMgr &Mgr) {
       }
     }
   }
+  if (TypeSec) {
+    if (auto *Symbol = static_cast<void **>(Mgr.getRawSymbol("types"))) {
+      const auto &TypeSecs = TypeSec->getContent();
+      for (size_t I = 0; I < TypeSecs.size(); ++I) {
+        TypeSecs[I]->setSymbol(Symbol[I]);
+      }
+    }
+  }
+  if (CodeSec) {
+    if (auto *Symbol = static_cast<void **>(Mgr.getRawSymbol("codes"))) {
+      const auto &CodeSecs = CodeSec->getContent();
+      for (size_t I = 0; I < CodeSecs.size(); ++I) {
+        CodeSecs[I]->setSymbol(Symbol[I]);
+      }
+    }
+  }
   if (MemorySec) {
     auto &MemType = MemorySec->getContent().front();
     MemType->setSymbol(Mgr.getRawSymbol("mem"));

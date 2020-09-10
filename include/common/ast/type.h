@@ -82,6 +82,11 @@ public:
   /// Getter of return types vector.
   Span<const ValType> getReturnTypes() const { return ReturnTypes; }
 
+  /// Getter of compiled symbol.
+  void *getSymbol() const { return Symbol; }
+  /// Setter of compiled symbol.
+  void setSymbol(void *S) { Symbol = S; }
+
   /// The node type should be ASTNodeAttr::Type_Function.
   const ASTNodeAttr NodeAttr = ASTNodeAttr::Type_Function;
 
@@ -97,6 +102,8 @@ private:
   std::vector<ValType> ParamTypes;
   std::vector<ValType> ReturnTypes;
   /// @}
+
+  void *Symbol = nullptr;
 };
 
 /// AST MemoryType node.
@@ -126,6 +133,7 @@ public:
 private:
   /// Data of MemoryType node.
   std::unique_ptr<Limit> Memory;
+
   void *Symbol = nullptr;
 };
 
